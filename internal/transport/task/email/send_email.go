@@ -98,8 +98,8 @@ func (h *SendEmailHandler) ProcessTask(ctx context.Context, task *asynq.Task) er
 		// JSON decoded it as a number. A payload without it cannot render
 		// and is dropped, like any other malformed payload.
 		purpose, ok := payload.Content["Type"].(float64)
-		if !ok {
-			logger.WithContext(ctx).Error("[SendEmail] Verification email without its code purpose",
+		if !ok || (purpose != 1 && purpose != 2) {
+			logger.WithContext(ctx).Error("[SendEmail] Verification email without valid code purpose",
 				logger.Field("type", payload.Content["Type"]),
 			)
 			return nil
@@ -133,17 +133,24 @@ func (h *SendEmailHandler) ProcessTask(ctx context.Context, task *asynq.Task) er
 		)
 		return nil
 	}
-	if bodyTemplate != "" {
+	if bodyTemplate != "" || payload.Type == taskqueue.EmailTypeVerify {
 		if payload.Content == nil {
 			payload.Content = make(map[string]any)
 		}
 		payload.Content["SiteName"] = mail.BrandName
 		payload.Content["SiteLogo"] = mail.BrandLogoURL
-		content, err = renderEmailTemplate(payload.Type, mail.UpgradeDefaultTemplate(bodyTemplate), payload.Content)
+		if payload.Type == taskqueue.EmailTypeVerify {
+			var fallback bool
+			content, fallback, err = renderVerificationBody(bodyTemplate, payload.Content)
+			if fallback && err == nil {
+				logger.WithContext(ctx).Error("[SendEmail] Invalid verification template; using default")
+			}
+		} else {
+			content, err = renderEmailTemplate(payload.Type, mail.UpgradeDefaultTemplate(bodyTemplate), payload.Content)
+		}
 		if err != nil {
 			logger.WithContext(ctx).Error("[SendEmail] Execute template failed",
 				logger.Field("error", err.Error()),
-				logger.Field("template", bodyTemplate),
 			)
 			return nil
 		}

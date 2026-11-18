@@ -81,9 +81,13 @@ func TestProcessTaskDropsAVerificationWithoutItsPurpose(t *testing.T) {
 		SiteName: func() string { return "Perfect Panel" },
 	})
 	for name, content := range map[string]map[string]any{
-		"no purpose":        {"Code": "123456"},
-		"purpose as string": {"Type": "1", "Code": "123456"},
-		"no content":        nil,
+		"no purpose":          {"Code": "123456"},
+		"purpose as string":   {"Type": "1", "Code": "123456"},
+		"no content":          nil,
+		"purpose but no code": {"Type": 1, "Expire": 5},
+		"empty code":          {"Type": 1, "Expire": 5, "Code": ""},
+		"fractional purpose":  {"Type": 1.5, "Expire": 5, "Code": "123456"},
+		"wrapped purpose":     {"Type": 257, "Expire": 5, "Code": "123456"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			payload, err := json.Marshal(taskqueue.SendEmailPayload{Type: taskqueue.EmailTypeVerify, Email: "user@example.com", Content: content})
