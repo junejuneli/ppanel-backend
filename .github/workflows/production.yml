@@ -1,0 +1,57 @@
+name: GoodVPN production
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: goodvpn-backend-production
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/checks.yml
+  package:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build immutable production image
+        run: |
+          latest=$(find internal/app/migration/schema/database/postgres -name '*.up.sql' -exec basename {} \; | sort | tail -1)
+          [[ "$latest" == 03025_subscribe_one_time.up.sql ]] || { echo 'Review deployment migration allowlist before release'; exit 1; }
+          docker build --build-arg VERSION="goodvpn-${GITHUB_SHA::12}" --build-arg CHANNEL=stable --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t "ppanel-backend:$GITHUB_SHA" .
+          docker save "ppanel-backend:$GITHUB_SHA" | gzip > backend-image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ github.sha }}
+          path: backend-image.tar.gz
+          retention-days: 14
+  deploy:
+    needs: package
+    if: github.ref == 'refs/heads/main' && vars.PPANEL_PRODUCTION_VERIFIED == 'true'
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-${{ github.sha }}
+      - name: Deploy with strict host verification and database backup
+        env:
+          DEPLOY_HOST: ${{ secrets.PPANEL_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.PPANEL_DEPLOY_USER }}
+          SSHPASS: ${{ secrets.PPANEL_DEPLOY_PASSWORD }}
+          KNOWN_HOSTS: ${{ secrets.PPANEL_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?}" "${DEPLOY_USER:?}" "${SSHPASS:?}" "${KNOWN_HOSTS:?}"
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          sudo apt-get update -qq && sudo apt-get install -y sshpass
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          sshpass -e ssh -o StrictHostKeyChecking=yes "$remote" "install -d -m 700 /opt/ppanel-releases/$GITHUB_SHA"
+          sshpass -e scp -o StrictHostKeyChecking=yes backend-image.tar.gz script/deploy/production.sh "$remote:/opt/ppanel-releases/$GITHUB_SHA/"
+          sshpass -e ssh -o StrictHostKeyChecking=yes "$remote" "bash /opt/ppanel-releases/$GITHUB_SHA/production.sh $GITHUB_SHA"
