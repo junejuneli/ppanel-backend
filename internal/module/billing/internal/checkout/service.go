@@ -164,6 +164,14 @@ func (t PlanTerms) Input(giftCredit int64) pricing.Input {
 // preview does before the buyer chose one.
 func ResolvePlanTerms(ctx context.Context, coupons pricing.CouponFinder, methods gateway.MethodFinder, plan *subscribeEntity.Subscribe, quantity int64, code string, paymentID int64) (PlanTerms, error) {
 	terms := PlanTerms{Plan: plan, Quantity: quantity}
+	if plan.OneTime {
+		if _, ok := user.FromContext(ctx); !ok {
+			return terms, xerr.Errorf(xerr.InvalidAccess, "请先注册并登录后购买试用装")
+		}
+		if quantity != plan.PurchaseQuantity() {
+			return terms, xerr.Errorf(xerr.InvalidParams, "试用装仅支持固定体验时长")
+		}
+	}
 	var err error
 	if terms.Coupon, err = pricing.ResolveCoupon(ctx, coupons, code, plan.Id, timeutil.Now()); err != nil {
 		return terms, err

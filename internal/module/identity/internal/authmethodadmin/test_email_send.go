@@ -16,7 +16,7 @@ func (s *Service) TestEmailSend(ctx context.Context, req *dto.TestEmailSendReque
 	if err != nil {
 		return xerr.Wrapf(err, xerr.ERROR, "new email sender")
 	}
-	err = client.SendContext(ctx, []string{req.Email}, "Test Email Send", "this a test email send by ppanel")
+	err = client.SendContext(ctx, []string{req.Email}, "GoodVPN 邮件发送测试 / Email delivery test", "<h1>邮件发送测试</h1><p>您已成功收到通过 GoodVPN 邮件服务发送的测试邮件。</p><p lang=\"en\">Your GoodVPN email delivery test succeeded.</p>")
 	if err != nil {
 		// The administrator is testing the sender, so the failure itself is
 		// the answer.

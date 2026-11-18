@@ -25,6 +25,14 @@ func (s *Service) UpdateSubscribe(ctx context.Context, req *dto.UpdateSubscribeR
 		log.Error("[UpdateSubscribe] Database query error", logger.Field("error", err.Error()), logger.Field("subscribe_id", req.Id))
 		return xerr.Wrapf(err, xerr.DatabaseQueryError, "get subscribe error: %v", err.Error())
 	}
+	if req.OneTime {
+		if len(req.Discount) > 1 {
+			return xerr.NewErrCodeMsg(400, "一次性套餐只能配置一个购买时长")
+		}
+		req.Quota = 1
+		disabled := false
+		req.AllowDeduction = &disabled
+	}
 	discount := ""
 	if len(req.Discount) > 0 {
 		val, _ := json.Marshal(req.Discount)
@@ -48,6 +56,7 @@ func (s *Service) UpdateSubscribe(ctx context.Context, req *dto.UpdateSubscribeR
 		Traffic:           req.Traffic,
 		SpeedLimit:        req.SpeedLimit,
 		DeviceLimit:       req.DeviceLimit,
+		OneTime:           req.OneTime,
 		Quota:             req.Quota,
 		Nodes:             nodes,
 		NodeTags:          slicesx.StringSliceToString(req.NodeTags),

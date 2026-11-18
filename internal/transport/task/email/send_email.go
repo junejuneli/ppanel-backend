@@ -134,7 +134,12 @@ func (h *SendEmailHandler) ProcessTask(ctx context.Context, task *asynq.Task) er
 		return nil
 	}
 	if bodyTemplate != "" {
-		content, err = renderEmailTemplate(payload.Type, bodyTemplate, payload.Content)
+		if payload.Content == nil {
+			payload.Content = make(map[string]any)
+		}
+		payload.Content["SiteName"] = mail.BrandName
+		payload.Content["SiteLogo"] = mail.BrandLogoURL
+		content, err = renderEmailTemplate(payload.Type, mail.UpgradeDefaultTemplate(bodyTemplate), payload.Content)
 		if err != nil {
 			logger.WithContext(ctx).Error("[SendEmail] Execute template failed",
 				logger.Field("error", err.Error()),

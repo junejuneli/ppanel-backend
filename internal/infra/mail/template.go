@@ -1,8 +1,11 @@
 package mail
 
-// Default subjects of the operator-configurable notification emails. Queue
-// producers fall back to them when the admin config leaves the matching
-// subject empty, which keeps existing deployments unchanged.
+import (
+	"crypto/sha256"
+	"fmt"
+	"strings"
+)
+
 const (
 	DefaultEmailVerifySubject        = "Verification code"
 	DefaultExpirationEmailSubject    = "Subscription Expired"
@@ -10,367 +13,55 @@ const (
 	DefaultTrafficExceedEmailSubject = "Subscription Traffic Exceed"
 )
 
-// Default HTML templates of the notification emails, which the stored
-// configuration falls back to like the subjects above. They are Go
-// templates, bilingual in Chinese and English.
+const heading = `<h1 style="margin:0 0 10px;color:#242137;font-size:27px;line-height:1.25;font-weight:700;">`
+const subtitle = `<p style="margin:0 0 24px;color:#5f4caa;font-size:14px;line-height:1.5;font-weight:600;">`
+const paragraph = `<p style="margin:0 0 14px;">`
+const english = `<p lang="en" style="margin:0 0 18px;color:#575368;">`
+const detail = `<p style="margin:20px 0;padding:15px 18px;background:#f2edff;border-left:3px solid #6748e5;color:#322466;font-weight:700;">`
+const action = `<p style="margin:24px 0 0;"><a href="https://goodvpn.app/#/purchasing" style="display:inline-block;padding:12px 20px;border-radius:9px;background:#6748e5;color:#ffffff;text-decoration:none;font-weight:700;">查看套餐 · View plans</a></p>`
+
+// Templates are bilingual HTML fragments. The sender adds the GoodVPN layout.
 const (
-	DefaultEmailVerifyTemplate = `<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>
-      {{if eq .Type 1}}注册验证码 / Registration Verification Code{{else}}重置密码验证码 / Password
-      Reset Verification Code{{end}}
-    </title>
-    <style>
-      body {
-        color: black;
-      }
-      .container {
-        border-radius: 5px;
-        width: 500px;
-        margin: 20px auto 0;
-        border: 1px solid #cce7ff;
-        background-color: #f0f8ff;
-        padding: 25px 30px;
-      }
-      .header {
-        text-align: center;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .logo {
-        width: 56px;
-        height: 56px;
-        object-fit: cover;
-        margin-right: 10px;
-      }
-      .site-name {
-        font-size: 18px;
-        font-weight: bold;
-        margin: 0;
-      }
-      .content {
-        margin: 10px 0;
-        font-size: 14px;
-      }
-      .greeting {
-        font-weight: 700;
-        margin: 5px 0;
-      }
-      .highlight {
-        margin: 0 2px;
-        font-weight: 700;
-        color: #007bff;
-      }
-      .code-container {
-        margin: 25px 0;
-        width: 100%;
-        background-color: #e6f2ff;
-        height: 60px;
-        line-height: 60px;
-        text-align: center;
-        font-size: 32px;
-        font-weight: 700;
-        color: #007bff;
-      }
-      .code {
-        letter-spacing: 5pt;
-      }
-      .footer {
-        border-top: #99ccff 1px solid;
-        margin-top: 20px;
-        padding-top: 5px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #777;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <img src="{{.SiteLogo}}" class="logo" />
-        <p class="site-name">{{.SiteName}}</p>
-      </div>
-      <div class="content">
-        <p class="greeting">Hi, 尊敬的用户 / Dear User</p>
-        <p>
-          {{if eq .Type 1}} 感谢您注册！您的验证码是（请于<span class="highlight">{{.Expire}}</span
-          >分钟内使用）：
-          <br />
-          Thank you for registering! Your verification code is (please use it within
-          <span class="highlight">{{.Expire}}</span> minutes): {{else}}
-          您正在重置密码。您的验证码是（请于<span class="highlight">{{.Expire}}</span>分钟内使用）：
-          <br />
-          You are resetting your password. Your verification code is (please use it within
-          <span class="highlight">{{.Expire}}</span> minutes): {{end}}
-        </p>
-        <div class="code-container">
-          <span class="code">{{.Code}}</span>
-        </div>
-        <p>
-          如果您未请求此验证码，请忽略此邮件。<br />If you did not request this code, please ignore
-          this email.
-        </p>
-      </div>
-      <div class="footer">此为系统邮件，请勿回复 / This is a system email, please do not reply</div>
-    </div>
-  </body>
-</html>
-`
-	DefaultMaintenanceEmailTemplate = `
-<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>系统维护通知 / System Maintenance Notice</title>
-    <style>
-      body {
-        color: black;
-      }
-      .container {
-        border-radius: 5px;
-        width: 500px;
-        margin: 20px auto 0;
-        border: 1px solid #cce7ff;
-        background-color: #f0f8ff;
-        padding: 25px 30px;
-      }
-      .header {
-        text-align: center;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .logo {
-        width: 56px;
-        height: 56px;
-        object-fit: cover;
-        margin-right: 10px;
-      }
-      .site-name {
-        font-size: 18px;
-        font-weight: bold;
-        margin: 0;
-      }
-      .content {
-        margin: 20px 0;
-        font-size: 14px;
-      }
-      .greeting {
-        font-weight: 700;
-        margin: 5px 0;
-      }
-      .highlight {
-        margin: 0 2px;
-        font-weight: 700;
-        color: #007bff;
-      }
-      .footer {
-        border-top: #99ccff 1px solid;
-        margin-top: 20px;
-        padding-top: 5px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #777;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <img src="{{.SiteLogo}}" class="logo" />
-        <p class="site-name">{{.SiteName}}</p>
-      </div>
-      <div class="content">
-        <p class="greeting">Hi, 尊敬的用户 / Dear User</p>
-        <p>
-          我们计划在<span class="highlight">{{.MaintenanceDate}}</span
-          >进行系统维护，预计维护时间为<span class="highlight">{{.MaintenanceTime}}</span
-          >。在此期间，您可能会遇到服务中断或无法访问的情况。
-          <br />
-          We will be performing system maintenance on
-          <span class="highlight">{{.MaintenanceDate}}</span>, and the expected maintenance period
-          is <span class="highlight">{{.MaintenanceTime}}</span>. During this time, you may
-          experience service interruptions or unavailability.
-        </p>
-        <p>
-          维护完成后，系统将自动恢复。如果您有任何问题，请随时联系我们的支持团队。
-          <br />
-          The system will resume automatically once the maintenance is completed. If you have any
-          questions, please feel free to contact our support team.
-        </p>
-      </div>
-      <div class="footer">此为系统邮件，请勿回复 / This is a system email, please do not reply</div>
-    </div>
-  </body>
-</html>
-`
-	DefaultExpirationEmailTemplate = `<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>服务到期通知 / Service Expiration Notice</title>
-    <style>
-      body {
-        color: black;
-      }
-      .container {
-        border-radius: 5px;
-        width: 500px;
-        margin: 20px auto 0;
-        border: 1px solid #cce7ff;
-        background-color: #f0f8ff;
-        padding: 25px 30px;
-      }
-      .header {
-        text-align: center;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .logo {
-        width: 56px;
-        height: 56px;
-        object-fit: cover;
-        margin-right: 10px;
-      }
-      .site-name {
-        font-size: 18px;
-        font-weight: bold;
-        margin: 0;
-      }
-      .content {
-        margin: 20px 0;
-        font-size: 14px;
-      }
-      .greeting {
-        font-weight: 700;
-        margin: 5px 0;
-      }
-      .highlight {
-        margin: 0 2px;
-        font-weight: 700;
-        color: #007bff;
-      }
-      .footer {
-        border-top: #99ccff 1px solid;
-        margin-top: 20px;
-        padding-top: 5px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #777;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <img src="{{.SiteLogo}}" class="logo" />
-        <p class="site-name">{{.SiteName}}</p>
-      </div>
-      <div class="content">
-        <p class="greeting">Hi, 尊敬的用户 / Dear User</p>
-        <p>
-          您的服务即将在<span class="highlight">{{.ExpireDate}}</span
-          >到期，请及时续费以保证服务不间断。
-          <br />
-          Your service is set to expire on <span class="highlight">{{.ExpireDate}}</span>. Please
-          renew your subscription to avoid service interruptions.
-        </p>
-        <p>
-          如需帮助，请联系客服团队。感谢您的支持！
-          <br />
-          If you need assistance, please contact our support team. Thank you for your continued
-          support!
-        </p>
-      </div>
-      <div class="footer">此为系统邮件，请勿回复 / This is a system email, please do not reply</div>
-    </div>
-  </body>
-</html>
-`
-	DefaultTrafficExceedEmailTemplate = `<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>流量用尽通知 / Traffic Exhausted Notice</title>
-    <style>
-      .container {
-        border-radius: 5px;
-        width: 500px;
-        margin: 20px auto 0;
-        border: 1px solid #cce7ff;
-        background-color: #f0f8ff;
-        padding: 25px 30px;
-      }
-      .header {
-        text-align: center;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .logo {
-        width: 56px;
-        height: 56px;
-        object-fit: cover;
-        margin-right: 10px;
-      }
-      .site-name {
-        font-size: 18px;
-        font-weight: bold;
-        margin: 0;
-      }
-      .content {
-        margin: 20px 0;
-        font-size: 14px;
-      }
-      .greeting {
-        font-weight: 700;
-        margin: 5px 0;
-      }
-      .highlight {
-        color: #007bff;
-      }
-      .footer {
-        border-top: #99ccff 1px solid;
-        margin-top: 20px;
-        padding-top: 5px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #777;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header">
-        <img src="{{.SiteLogo}}" class="logo" />
-        <p class="site-name">{{.SiteName}}</p>
-      </div>
-      <div class="content">
-        <p class="greeting">Hi, 尊敬的用户 / Dear User</p>
-        <p>
-          您的流量已经用尽，请及时购买流量以继续使用我们的服务。
-          <br />
-          Your traffic has been exhausted. Please purchase additional traffic to continue using our
-          service.
-        </p>
-        <p>
-          如需帮助，请联系客服团队。感谢您的支持！
-          <br />
-          If you need assistance, please contact our support team. Thank you for your continued
-          support!
-        </p>
-      </div>
-      <div class="footer">此为系统邮件，请勿回复 / This is a system email, please do not reply</div>
-    </div>
-  </body>
-</html>`
+	DefaultEmailVerifyTemplate = heading + `{{if eq .Type 1}}注册验证码{{else}}重置密码验证码{{end}}</h1>` +
+		subtitle + `{{if eq .Type 1}}Registration Verification Code{{else}}Password Reset Verification Code{{end}}</p>` +
+		paragraph + `{{if eq .Type 1}}请输入下方验证码完成注册。{{else}}请输入下方验证码重置密码。{{end}}验证码将在 <strong>{{.Expire}}</strong> 分钟后失效。</p>` +
+		english + `Enter the code below to {{if eq .Type 1}}complete your registration{{else}}reset your password{{end}}. It expires in <span>{{.Expire}}</span> minutes.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0;">
+<tr><td align="center" bgcolor="#F2EDFF" style="padding:20px 12px;border:1px solid #E3DAFF;border-radius:12px;color:#4a2ab9;font-family:Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:0.16em;">{{.Code}}</td></tr>
+</table>` +
+		`<p style="margin:0;color:#575368;font-size:13px;">如果您没有请求验证码，可以忽略此邮件。请勿与他人分享验证码。<br><span lang="en">If you didn’t request this code, you can ignore this email. Keep the code private.</span></p>`
+
+	DefaultMaintenanceEmailTemplate = heading + `系统维护通知</h1>` +
+		subtitle + `Scheduled Maintenance</p>` +
+		paragraph + `GoodVPN 将在以下时段进行系统维护。维护期间，服务可能暂时中断。</p>` +
+		detail + `{{.MaintenanceDate}}<br>{{.MaintenanceTime}}</p>` +
+		english + `GoodVPN may be temporarily unavailable during the maintenance window above. Service will resume once maintenance is complete.</p>`
+
+	DefaultExpirationEmailTemplate = heading + `订阅到期提醒</h1>` +
+		subtitle + `Subscription Expiration</p>` +
+		paragraph + `以下是您的 GoodVPN 订阅到期时间。如需继续使用，请续订。</p>` +
+		detail + `到期时间 · Expiration<br>{{.ExpireDate}}</p>` +
+		english + `Your GoodVPN subscription ends on the date above. Renew to continue using the service.</p>` + action
+
+	DefaultTrafficExceedEmailTemplate = heading + `套餐流量已用尽</h1>` +
+		subtitle + `Data Allowance Used</p>` +
+		paragraph + `您已用完套餐内的流量。如需恢复连接，请购买流量或更换套餐。</p>` +
+		english + `You’ve used the data included in your plan. To reconnect, purchase more data or change your plan.</p>` + action
 )
+
+// UpgradeDefaultTemplate replaces exact copies of the bundled legacy
+// templates, including copies saved in the database. Edits stay in place.
+func UpgradeDefaultTemplate(body string) string {
+	switch fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(body)))) {
+	case "0bac45706096cf7d4ebbe655af6145d5d246c03ce2df42f8f5dc70f11e76c35c":
+		return DefaultEmailVerifyTemplate
+	case "8dc7cef2305c31bbb1b2f1ea36b6429f3e63438a30a0418d5d009d268f40a416":
+		return DefaultMaintenanceEmailTemplate
+	case "352bf82199d250a6131dc27515fc5b04b4411724d1e2030f41d8acc9127a802e":
+		return DefaultExpirationEmailTemplate
+	case "d9a9189df5ba1e667bda502dc516cb07c35bc80845312f21637d353fe60a8d54":
+		return DefaultTrafficExceedEmailTemplate
+	default:
+		return body
+	}
+}

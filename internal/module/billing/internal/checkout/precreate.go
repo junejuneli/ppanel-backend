@@ -28,6 +28,9 @@ func (s *Service) PreCreateOrder(ctx context.Context, req *dto.PurchaseOrderRequ
 	if err != nil {
 		return nil, xerr.Wrapf(err, xerr.DatabaseQueryError, "find subscribe %d", req.SubscribeId)
 	}
+	if plan.OneTime && req.UserSubscribeId > 0 {
+		return nil, xerr.Errorf(xerr.SubscribeNotAvailable, "试用装不可续费")
+	}
 	if req.UserSubscribeId < 0 {
 		return nil, xerr.Errorf(xerr.InvalidParams, "invalid user subscribe id")
 	}

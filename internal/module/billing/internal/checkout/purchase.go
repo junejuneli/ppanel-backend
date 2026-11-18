@@ -98,7 +98,7 @@ func (s *Service) Purchase(ctx context.Context, req *dto.PurchaseOrderRequest) (
 		// subscription can be missed here. The authoritative gate is
 		// fulfillment's own re-check under its user-row lock, which rejects
 		// over-quota activation.
-		if err := s.ensureQuota(ctx, u.Id, plan); err != nil {
+		if err := s.ensureQuota(ctx, u.Id, plan, tx.Order()); err != nil {
 			return err
 		}
 		ApplyQuote(orderInfo, pricing.Compute(terms.Input(wallet.GiftAmount)))
@@ -133,7 +133,26 @@ func (s *Service) Purchase(ctx context.Context, req *dto.PurchaseOrderRequest) (
 }
 
 // ensureQuota rejects a purchase beyond the plan's per-user quota.
-func (s *Service) ensureQuota(ctx context.Context, userID int64, plan *subscribeEntity.Subscribe) error {
+func (s *Service) ensureQuota(ctx context.Context, userID int64, plan *subscribeEntity.Subscribe, stores ...any) error {
+	if plan.OneTime {
+		var store any = s.deps.Orders
+		if len(stores) > 0 {
+			store = stores[0]
+		}
+		counter, ok := store.(interface {
+			CountPlanPurchases(context.Context, int64, int64) (int64, error)
+		})
+		if !ok {
+			return xerr.Errorf(xerr.ERROR, "一次性套餐购买记录暂不可用")
+		}
+		count, err := counter.CountPlanPurchases(ctx, userID, plan.Id)
+		if err != nil {
+			return xerr.Wrapf(err, xerr.ERROR, "读取一次性套餐购买记录失败")
+		}
+		if count > 0 {
+			return xerr.Errorf(xerr.SubscribeQuotaLimit, "试用装每账号限购一次，请先关闭尚未付款的试用订单")
+		}
+	}
 	if plan.Quota <= 0 {
 		return nil
 	}

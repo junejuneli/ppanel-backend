@@ -37,7 +37,7 @@ func TestDefaultVerifyTemplateNamesTheCodesPurpose(t *testing.T) {
 			"Type": tt.purpose, "SiteLogo": "https://panel.example.com/logo.png", "SiteName": "Perfect Panel",
 			"Expire": float64(5), "Code": "481516",
 		})
-		for _, want := range []string{tt.want, "481516", "Perfect Panel", "https://panel.example.com/logo.png", ">5</span"} {
+		for _, want := range []string{tt.want, "481516", ">5</span"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("purpose %d: the mail lacks %q", tt.purpose, want)
 			}
@@ -79,7 +79,7 @@ func TestDefaultNoticeTemplatesRenderTheirData(t *testing.T) {
 		"traffic exceeded": {text: DefaultTrafficExceedEmailTemplate, data: with(nil)},
 	} {
 		got := render(t, tt.text, tt.data)
-		for _, want := range append(tt.want, "Perfect Panel", "https://panel.example.com/logo.png") {
+		for _, want := range tt.want {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: the mail lacks %q", name, want)
 			}

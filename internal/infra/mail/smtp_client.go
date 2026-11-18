@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strconv"
 	"strings"
@@ -32,7 +33,8 @@ var errSTARTTLSRequired = errors.New("smtp: the relay does not offer STARTTLS bu
 
 // SMTPClient sends through an SMTP relay, one connection per message.
 type SMTPClient struct {
-	conf SMTPConfig
+	conf    SMTPConfig
+	branded bool
 	// implicitTLS starts the connection with a TLS handshake; otherwise the
 	// session upgrades through STARTTLS, which requireTLS makes mandatory.
 	implicitTLS bool
@@ -117,7 +119,16 @@ func (m *SMTPClient) SendContext(ctx context.Context, to []string, subject, body
 
 func (m *SMTPClient) message(to []string, subject, body string) *gomail.Message {
 	msg := gomail.NewMessage()
-	msg.SetAddressHeader("From", m.conf.From, m.conf.SiteName)
+	displayName := m.conf.SiteName
+	if m.branded {
+		displayName = BrandName
+		body = brandHTML(body)
+		msg.Embed(brandLogoCID, gomail.SetCopyFunc(func(w io.Writer) error {
+			_, err := w.Write(brandLogo)
+			return err
+		}))
+	}
+	msg.SetAddressHeader("From", m.conf.From, displayName)
 	if m.conf.ReplyTo != "" {
 		msg.SetHeader("Reply-To", m.conf.ReplyTo)
 	}
@@ -167,6 +178,14 @@ func (m *SMTPClient) handshake(conn net.Conn) (*smtp.Client, error) {
 	client, err := smtp.NewClient(conn, m.conf.Host)
 	if err != nil {
 		return nil, err
+	}
+	// 使用发件域名标识客户端，避免 Google 中继拒绝默认的 localhost。
+	if sender, parseErr := mail.ParseAddress(m.conf.From); parseErr == nil {
+		if at := strings.LastIndex(sender.Address, "@"); at >= 0 {
+			if err := client.Hello(sender.Address[at+1:]); err != nil {
+				return nil, fmt.Errorf("smtp hello: %w", err)
+			}
+		}
 	}
 	if !m.implicitTLS {
 		ok, _ := client.Extension("STARTTLS")

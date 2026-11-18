@@ -49,6 +49,9 @@ func (s *Service) ResetTraffic(ctx context.Context, req *dto.ResetTrafficOrderRe
 	if userSubscribe.Subscribe == nil {
 		return nil, xerr.Errorf(xerr.ERROR, "subscribe of user subscribe %d not found", req.UserSubscribeID)
 	}
+	if userSubscribe.Subscribe.OneTime {
+		return nil, xerr.Errorf(xerr.SubscribeNotAvailable, "试用装不可重置流量")
+	}
 	method, err := gateway.LookupMethod(ctx, s.deps.Payments, req.Payment)
 	if err != nil {
 		return nil, err

@@ -31,7 +31,9 @@ func NewSender(platform, config, siteName string) (Sender, error) {
 			return nil, fmt.Errorf("smtp config unmarshal failed: %w", err)
 		}
 		cfg.SiteName = siteName
-		return NewSMTPClient(&cfg), nil
+		client := NewSMTPClient(&cfg)
+		client.branded = true
+		return client, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}

@@ -3,6 +3,7 @@
 package subscribe
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ type Subscribe struct {
 	Traffic           int64     `gorm:"type:int;not null;default:0;comment:Traffic"`
 	SpeedLimit        int64     `gorm:"type:int;not null;default:0;comment:Speed Limit"`
 	DeviceLimit       int64     `gorm:"type:int;not null;default:0;comment:Device Limit"`
+	OneTime           bool      `gorm:"not null;default:false"`
 	Quota             int64     `gorm:"type:int;not null;default:0;comment:Quota"`
 	Nodes             string    `gorm:"type:varchar(255);comment:Node Ids"`
 	NodeTags          string    `gorm:"type:varchar(255);comment:Node Tags"`
@@ -135,4 +137,15 @@ func (p *FilterParams) Normalize() {
 	if p.Size > MaxSubscribePageSize {
 		p.Size = MaxSubscribePageSize
 	}
+}
+
+// PurchaseQuantity 返回一次性套餐唯一允许购买的时长。
+func (s *Subscribe) PurchaseQuantity() int64 {
+	var tiers []struct {
+		Quantity int64 `json:"quantity"`
+	}
+	if json.Unmarshal([]byte(s.Discount), &tiers) == nil && len(tiers) == 1 && tiers[0].Quantity > 0 {
+		return tiers[0].Quantity
+	}
+	return 1
 }

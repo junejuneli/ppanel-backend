@@ -17,6 +17,14 @@ func (s *Service) CreateSubscribe(ctx context.Context, req *dto.CreateSubscribeR
 	if err := validateSubscribeInput(req.UnitTime, req.UnitPrice, req.Replacement, req.Inventory, req.Traffic, req.SpeedLimit, req.DeviceLimit, req.Quota, req.DeductionRatio, req.ResetCycle, req.Discount); err != nil {
 		return err
 	}
+	if req.OneTime {
+		if len(req.Discount) > 1 {
+			return xerr.NewErrCodeMsg(400, "一次性套餐只能配置一个购买时长")
+		}
+		req.Quota = 1
+		disabled := false
+		req.AllowDeduction = &disabled
+	}
 	discount := ""
 	if len(req.Discount) > 0 {
 		val, _ := json.Marshal(req.Discount)
@@ -35,6 +43,7 @@ func (s *Service) CreateSubscribe(ctx context.Context, req *dto.CreateSubscribeR
 		Traffic:           req.Traffic,
 		SpeedLimit:        req.SpeedLimit,
 		DeviceLimit:       req.DeviceLimit,
+		OneTime:           req.OneTime,
 		Quota:             req.Quota,
 		Nodes:             slicesx.Int64SliceToString(req.Nodes.Int64s()),
 		NodeTags:          slicesx.StringSliceToString(req.NodeTags),

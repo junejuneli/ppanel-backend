@@ -42,6 +42,9 @@ func (s *Service) Renewal(ctx context.Context, req *dto.RenewalOrderRequest) (*d
 	if err != nil {
 		return nil, xerr.Wrapf(err, xerr.DatabaseQueryError, "find subscribe %d", userSubscribe.SubscribeId)
 	}
+	if plan.OneTime {
+		return nil, xerr.Errorf(xerr.SubscribeNotAvailable, "试用装不可续费")
+	}
 	if err := planOnSale(plan); err != nil {
 		return nil, err
 	}

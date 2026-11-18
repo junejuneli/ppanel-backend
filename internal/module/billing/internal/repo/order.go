@@ -731,3 +731,12 @@ func statusList(statuses []uint8) []int64 {
 
 // settledStatuses selects orders whose payment was collected.
 func settledStatuses() []int64 { return statusList(order.SettledStatuses()) }
+
+// CountPlanPurchases 在账号锁内检查待支付订单和永久购买记录，退款不会恢复体验资格。
+func (m *orderRepo) CountPlanPurchases(ctx context.Context, userID, planID int64) (int64, error) {
+	var count int64
+	err := m.QueryNoCacheCtx(ctx, &count, func(conn *gorm.DB, v any) error {
+		return conn.Unscoped().Model(&order.Order{}).Where("user_id = ? AND subscribe_id = ? AND type = ? AND status <> ?", userID, planID, order.TypeSubscribe, order.StatusClosed).Count(&count).Error
+	})
+	return count, err
+}

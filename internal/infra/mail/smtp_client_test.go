@@ -148,6 +148,22 @@ func TestSMTPClientTransfersTheMessage(t *testing.T) {
 	}
 }
 
+func TestSMTPClientUsesSenderDomainForRelayHello(t *testing.T) {
+	for _, implicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("implicit=%v", implicit), func(t *testing.T) {
+			cert := selfSignedCertificate(t)
+			relay := startFakeSMTP(t, relayOptions{cert: &cert, implicit: implicit, rejectLocalhost: true})
+			client := NewSMTPClient(&SMTPConfig{Host: "127.0.0.1", Port: relay.port, From: "GoodVPN <noreply@goodvpn.app>", SSL: true, ImplicitTLS: implicit, InsecureSkipVerify: true})
+			if err := client.SendContext(context.Background(), []string{"user@example.test"}, "subject", "body"); err != nil {
+				t.Fatalf("send through relay rejecting localhost: %v", err)
+			}
+			if session := relay.session(); session.hello != "goodvpn.app" || session.data == "" {
+				t.Fatalf("unexpected SMTP session: %+v", session)
+			}
+		})
+	}
+}
+
 // Configured credentials are presented with the mechanism the relay offers.
 func TestSMTPClientAuthenticates(t *testing.T) {
 	for name, mechanisms := range map[string]string{"plain": "PLAIN LOGIN", "login": "LOGIN"} {
@@ -258,6 +274,7 @@ func selfSignedCertificate(t *testing.T) tls.Certificate {
 }
 
 type relayOptions struct {
+	rejectLocalhost bool
 	// cert offers STARTTLS, or with implicit starts the session with TLS.
 	cert     *tls.Certificate
 	implicit bool
@@ -268,6 +285,7 @@ type relayOptions struct {
 }
 
 type smtpSession struct {
+	hello       string
 	from        string
 	rcpt        []string
 	data        string
@@ -325,14 +343,14 @@ func startFakeSMTP(t *testing.T, opts relayOptions) *fakeRelay {
 			conn = tlsConn
 			tlsConfig = nil
 		}
-		relay.serve(conn, tlsConfig, opts.auth)
+		relay.serve(conn, tlsConfig, opts.auth, opts.rejectLocalhost)
 	}()
 	return relay
 }
 
 // serve speaks just enough SMTP for one message; a non-nil starttls config
 // is offered through the STARTTLS extension.
-func (r *fakeRelay) serve(conn net.Conn, starttls *tls.Config, auth string) {
+func (r *fakeRelay) serve(conn net.Conn, starttls *tls.Config, auth string, rejectLocalhost bool) {
 	reader := bufio.NewReader(conn)
 	reply := func(format string, args ...any) { _, _ = fmt.Fprintf(conn, format+"\r\n", args...) }
 	readLine := func() (string, bool) {
@@ -352,6 +370,13 @@ func (r *fakeRelay) serve(conn net.Conn, starttls *tls.Config, auth string) {
 		command := strings.ToUpper(line)
 		switch {
 		case strings.HasPrefix(command, "EHLO"), strings.HasPrefix(command, "HELO"):
+			if rejectLocalhost && strings.EqualFold(strings.TrimSpace(line[4:]), "localhost") {
+				reply("421 4.7.0 invalid client hostname")
+				return
+			}
+			r.mu.Lock()
+			r.got.hello = strings.Fields(line)[1]
+			r.mu.Unlock()
 			extensions := []string{"fake"}
 			if starttls != nil {
 				extensions = append(extensions, "STARTTLS")

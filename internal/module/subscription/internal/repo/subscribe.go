@@ -154,7 +154,7 @@ var planColumns = []string{
 	"name", "language", "description", "unit_price", "unit_time", "discount", "replacement",
 	"inventory", "traffic", "speed_limit", "device_limit", "quota", "nodes", "node_tags",
 	"show", "sell", "sort", "deduction_ratio", "allow_deduction", "reset_cycle", "renewal_reset",
-	"show_original_price",
+	"show_original_price", "one_time",
 }
 
 // groupColumns are the group settings an administrator's edit writes.
