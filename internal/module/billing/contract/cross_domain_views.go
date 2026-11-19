@@ -180,6 +180,7 @@ type BillingSubscribeSnapshot struct {
 	Traffic           int64                      `json:"traffic"`
 	SpeedLimit        int64                      `json:"speed_limit"`
 	DeviceLimit       int64                      `json:"device_limit"`
+	OneTime           bool                       `json:"one_time"`
 	Quota             int64                      `json:"quota"`
 	Nodes             BillingNodeIDList          `json:"nodes"`
 	NodeTags          []string                   `json:"node_tags"`
